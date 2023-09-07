@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/mobile_navigation"
+    app:startDestination="@+id/tabLayoutFragment">
+
+    <fragment
+        android:id="@+id/tabLayoutFragment"
+        android:name="com.rk.musicplayer.ui.TabLayoutFragment"
+        android:label="@string/title_music"
+        tools:layout="@layout/fragment_tab_layout" >
+        <action
+            android:id="@+id/action_tabLayoutFragment_to_playerFragment"
+            app:destination="@id/playerFragment" />
+    </fragment>
+    <fragment
+        android:id="@+id/playerFragment"
+        android:name="com.rk.musicplayer.ui.PlayerFragment"
+        android:label="fragment_player"
+        tools:layout="@layout/fragment_player" />
+
+</navigation>
