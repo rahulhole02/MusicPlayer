@@ -7,10 +7,13 @@ import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.android.material.snackbar.Snackbar
 import com.rk.musicplayer.adapter.SongRecyclerViewAdapter
 import com.rk.musicplayer.databinding.FragmentForYouBinding
 import com.rk.musicplayer.interfaces.IOnItemClicked
 import com.rk.musicplayer.model.Songs
+import com.rk.musicplayer.util.Constants
+import com.rk.musicplayer.util.Constants.Companion.NO_INTERNET
 
 class ForYouFragment(listener: IOnItemClicked) : Fragment(), IOnItemClicked{
 
@@ -35,16 +38,24 @@ class ForYouFragment(listener: IOnItemClicked) : Fragment(), IOnItemClicked{
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        //viewModel = ViewModelProvider(this)[TabLayoutViewModel::class.java]
+        binding.progressBar.visibility = View.VISIBLE
         val songList = ArrayList<Songs>()
         val adapter = SongRecyclerViewAdapter(requireContext(), songList, this)
         binding.songRecyclerView.layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.VERTICAL, false)
         binding.songRecyclerView.setHasFixedSize(true)
         binding.songRecyclerView.adapter = adapter
         viewModel._songList.observe(viewLifecycleOwner) {
+            binding.progressBar.visibility = View.INVISIBLE
             songList.clear()
             songList.addAll(it)
             adapter.notifyDataSetChanged()
+            if(it.isEmpty()){
+                binding.songRecyclerView.visibility = View.INVISIBLE
+                binding.songRecyclerView.visibility = View.VISIBLE
+            } else {
+                binding.songRecyclerView.visibility = View.VISIBLE
+                binding.txtInfo.visibility = View.INVISIBLE
+            }
         }
     }
 
@@ -54,6 +65,10 @@ class ForYouFragment(listener: IOnItemClicked) : Fragment(), IOnItemClicked{
     }
 
     override fun onItemClicked(songList: List<Songs>, index: Int) {
-        listener.onItemClicked(songList, index)
+        if(Constants.isInternetAvailable(requireContext())) {
+            listener.onItemClicked(songList, index)
+        } else {
+            Snackbar.make(requireView(), NO_INTERNET, Snackbar.LENGTH_SHORT).show()
+        }
     }
 }

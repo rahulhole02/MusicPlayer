@@ -6,9 +6,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
-import com.google.android.material.card.MaterialCardView
 import com.rk.musicplayer.R
 import com.rk.musicplayer.interfaces.IOnItemClicked
 import com.rk.musicplayer.model.Songs
@@ -22,8 +22,9 @@ class SongRecyclerViewAdapter(private val context: Context,
 
     class MyViewHolder(itemView: View): RecyclerView.ViewHolder(itemView){
         val songName: TextView = itemView.findViewById(R.id.songName)
+        val songArtist: TextView = itemView.findViewById(R.id.songArtist)
         val songImage: ImageView = itemView.findViewById(R.id.songImage)
-        val cardView: MaterialCardView = itemView.findViewById(R.id.cardView)
+        val constraintLayout: ConstraintLayout = itemView.findViewById(R.id.constraintLayout)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MyViewHolder {
@@ -38,11 +39,11 @@ class SongRecyclerViewAdapter(private val context: Context,
     override fun onBindViewHolder(holder: MyViewHolder, position: Int) {
         val song = songList[position]
         holder.songName.text = song.name
+        holder.songArtist.text = song.artist
         Glide.with(context)
             .load(COVERIMAGEURL.plus(song.cover))
             .into(holder.songImage)
-        holder.cardView.setOnClickListener{
-            println("item $position clicked")
+        holder.constraintLayout.setOnClickListener{
             listener.onItemClicked(songList, position)
         }
     }

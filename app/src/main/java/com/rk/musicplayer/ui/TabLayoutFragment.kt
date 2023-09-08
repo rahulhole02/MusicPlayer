@@ -7,10 +7,8 @@ import android.view.ViewGroup
 import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
+import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayoutMediator
 import com.rk.musicplayer.R
 import com.rk.musicplayer.adapter.MyViewPagerAdapter
@@ -18,17 +16,15 @@ import com.rk.musicplayer.databinding.FragmentTabLayoutBinding
 import com.rk.musicplayer.interfaces.IOnItemClicked
 import com.rk.musicplayer.model.Songs
 import com.rk.musicplayer.util.Constants.Companion.CURRENT_INDEX
+import com.rk.musicplayer.util.Constants.Companion.NO_INTERNET
 import com.rk.musicplayer.util.Constants.Companion.SONG_PARCELABLE
-import kotlinx.coroutines.launch
+import com.rk.musicplayer.util.Constants.Companion.isInternetAvailable
 
 class TabLayoutFragment : Fragment(), IOnItemClicked {
 
     private val tabList = arrayListOf("For You", "Top Tracks")
     private var _binding: FragmentTabLayoutBinding? = null
     private val binding get() = _binding!!
-    companion object {
-        fun newInstance() = TabLayoutFragment()
-    }
 
     private val viewModel: TabLayoutViewModel by activityViewModels()
 
@@ -54,14 +50,14 @@ class TabLayoutFragment : Fragment(), IOnItemClicked {
         TabLayoutMediator(tabLayout, viewPager) { tab, position ->
             tab.text = tabList[position]
         }.attach()
-        /*viewModel.itemClicked.observe(viewLifecycleOwner){
-            val bundle = bundleOf(SONG_PARCELABLE to it)
-            findNavController().navigate(R.id.action_tabLayoutFragment_to_playerFragment, bundle)
-        }*/
     }
 
     private fun callApi() {
-        viewModel.callApi()
+        if(isInternetAvailable(requireContext())) {
+            viewModel.callApi()
+        } else {
+            view?.let { Snackbar.make(it, NO_INTERNET, Snackbar.LENGTH_SHORT).show() }
+        }
     }
 
     override fun onDestroyView() {

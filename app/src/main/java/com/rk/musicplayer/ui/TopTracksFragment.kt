@@ -1,31 +1,27 @@
 package com.rk.musicplayer.ui
 
-import androidx.lifecycle.ViewModelProvider
 import android.os.Bundle
-import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
-import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.rk.musicplayer.R
+import com.google.android.material.snackbar.Snackbar
 import com.rk.musicplayer.adapter.SongRecyclerViewAdapter
-import com.rk.musicplayer.databinding.FragmentForYouBinding
 import com.rk.musicplayer.databinding.FragmentTopTracksBinding
 import com.rk.musicplayer.interfaces.IOnItemClicked
 import com.rk.musicplayer.model.Songs
+import com.rk.musicplayer.util.Constants
+import com.rk.musicplayer.util.Constants.Companion.NO_INTERNET
+import com.rk.musicplayer.util.Constants.Companion.isInternetAvailable
 
 class TopTracksFragment(listener: IOnItemClicked) : Fragment(), IOnItemClicked {
 
     private var _binding: FragmentTopTracksBinding? = null
     private val binding get() = _binding!!
     private val viewModel: TabLayoutViewModel by activityViewModels()
-
     private var listener: IOnItemClicked
-    /*companion object {
-        fun newInstance() = TopTracksFragment()
-    }*/
     init {
         this.listener = listener
     }
@@ -40,16 +36,24 @@ class TopTracksFragment(listener: IOnItemClicked) : Fragment(), IOnItemClicked {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        //viewModel = ViewModelProvider(this)[TabLayoutViewModel::class.java]
+        binding.progressBar.visibility = View.VISIBLE
         val filteredSongList = ArrayList<Songs>()
         val adapter = SongRecyclerViewAdapter(requireContext(), filteredSongList, this)
         binding.topTracksRecyclerView.layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.VERTICAL, false)
         binding.topTracksRecyclerView.setHasFixedSize(true)
         binding.topTracksRecyclerView.adapter = adapter
         viewModel._filteredTopTracks.observe(viewLifecycleOwner) {
+            binding.progressBar.visibility = View.INVISIBLE
             filteredSongList.clear()
             filteredSongList.addAll(it)
             adapter.notifyDataSetChanged()
+            if(it.isEmpty()){
+                binding.topTracksRecyclerView.visibility = View.INVISIBLE
+                binding.txtInfo.visibility = View.VISIBLE
+            } else {
+                binding.topTracksRecyclerView.visibility = View.VISIBLE
+                binding.txtInfo.visibility = View.INVISIBLE
+            }
         }
     }
 
@@ -59,6 +63,10 @@ class TopTracksFragment(listener: IOnItemClicked) : Fragment(), IOnItemClicked {
     }
 
     override fun onItemClicked(songList: List<Songs>, index: Int) {
-        listener.onItemClicked(songList, index)
+        if(isInternetAvailable(requireContext())) {
+            listener.onItemClicked(songList, index)
+        } else {
+            Snackbar.make(requireView(), Constants.NO_INTERNET, Snackbar.LENGTH_SHORT).show()
+        }
     }
 }

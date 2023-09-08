@@ -1,40 +1,55 @@
 package com.rk.musicplayer.ui
 
+import android.app.Dialog
+import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.Bundle
+import android.view.GestureDetector
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
 import android.widget.SeekBar
+import android.widget.Toast
+import androidx.core.view.GestureDetectorCompat
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
+import com.google.android.material.snackbar.Snackbar
 import com.rk.musicplayer.R
 import com.rk.musicplayer.databinding.FragmentPlayerBinding
+import com.rk.musicplayer.interfaces.ISwipeGesture
 import com.rk.musicplayer.model.Songs
 import com.rk.musicplayer.util.Constants.Companion.COVERIMAGEURL
 import com.rk.musicplayer.util.Constants.Companion.CURRENT_INDEX
+import com.rk.musicplayer.util.Constants.Companion.MSG_FOR_ERROR_IN_SONG
+import com.rk.musicplayer.util.Constants.Companion.NO_INTERNET
 import com.rk.musicplayer.util.Constants.Companion.SONG_PARCELABLE
+import com.rk.musicplayer.util.Constants.Companion.isInternetAvailable
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.lang.Math.abs
 
-class PlayerFragment : Fragment() {
+class PlayerFragment : Fragment(), ISwipeGesture {
     private var _binding: FragmentPlayerBinding? = null
     private val binding get() = _binding!!
     private lateinit var songList: List<Songs>
     private lateinit var song: Songs
     private var currentIndex: Int = 0
-
-    //private lateinit var mDetector: GestureDetectorCompat
-    companion object {
-        fun newInstance() = PlayerFragment()
+    private var mediaPlayer: MediaPlayer? = null
+    private var job1: Job? = null
+    private val progressDialog: Dialog by lazy {
+        showProgressDialog()
     }
 
-    private lateinit var viewModel: PlayerViewModel
-    private lateinit var mediaPlayer: MediaPlayer
-    private lateinit var seekbarJob: Job
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        requireActivity().actionBar?.hide()
+    }
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
@@ -42,26 +57,28 @@ class PlayerFragment : Fragment() {
         songList = arguments?.getParcelableArrayList(SONG_PARCELABLE)!!
         currentIndex = arguments?.getInt(CURRENT_INDEX)!!
         song = songList[currentIndex]
-        //println("${song?.id} ${song?.name} ${song?.artist}")
-        //mDetector = GestureDetectorCompat(requireContext(), MyGestureListener(findNavController()))
         _binding = FragmentPlayerBinding.inflate(inflater, container, false)
-        /*view.setOnTouchListener{_,event->
-            mDetector.onTouchEvent(event)
-        }*/
         return binding.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        viewModel = ViewModelProvider(this)[PlayerViewModel::class.java]
-        mediaPlayer = MediaPlayer()
-
-        prepareMediaPlayer()
-        binding.btnPlayPause.setImageResource(R.drawable.pause_icon)
-        loadCover()
+        initMusicPlayer()
+        updatePlayerData()
 
         binding.btnPlayPause.setOnClickListener{
-            enablePlaying(mediaPlayer.isPlaying)
+            if(isInternetAvailable(requireContext())) {
+                if (mediaPlayer?.isPlaying == true) {
+                    binding.btnPlayPause.setImageResource(R.drawable.play_icon)
+                    mediaPlayer?.pause()
+                } else {
+                    binding.btnPlayPause.setImageResource(R.drawable.pause_icon)
+                    mediaPlayer?.start()
+                    updateSeekbar()
+                }
+            } else {
+                Snackbar.make(requireView(), NO_INTERNET, Snackbar.LENGTH_SHORT).show()
+            }
         }
 
         binding.btnPrevious.setOnClickListener {
@@ -75,8 +92,9 @@ class PlayerFragment : Fragment() {
         binding.songProgressBar.setOnSeekBarChangeListener(object: SeekBar.OnSeekBarChangeListener{
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if(fromUser) {
-                    mediaPlayer.seekTo(progress)
-                    binding.txtCurrentDuration.text = milliSecondsToTime(mediaPlayer.currentPosition.toLong())
+                    mediaPlayer?.seekTo(progress)
+                    binding.txtCurrentDuration.text = mediaPlayer?.currentPosition?.toLong()
+                        ?.let { milliSecondsToTime(it) }
                 }
             }
 
@@ -88,15 +106,67 @@ class PlayerFragment : Fragment() {
 
         })
 
-        mediaPlayer.setOnBufferingUpdateListener { _, percent ->
+        mediaPlayer?.setOnBufferingUpdateListener { _, percent ->
             binding.songProgressBar.secondaryProgress = percent
         }
+    }
 
-        mediaPlayer.setOnCompletionListener {
-            binding.songProgressBar.progress = 0
-            binding.btnPlayPause.setImageResource(R.drawable.play_icon)
-            mediaPlayer.reset()
-            prepareMediaPlayer()
+    private fun updatePlayerData() {
+        lifecycleScope.launch(Dispatchers.Main){
+            job1?.join()
+            println("inside updatePlayerData")
+            binding.songProgressBar.max = mediaPlayer?.duration!!
+            binding.txtTotalDuration.text = mediaPlayer?.duration?.toLong()?.let {milliSecondsToTime(it)}
+            progressDialog.dismiss()
+            binding.btnPlayPause.setImageResource(R.drawable.pause_icon)
+            updateSeekbar()
+        }
+    }
+
+    private fun initMusicPlayer() {
+        progressDialog.show()
+        binding.txtCurrentDuration.text = "0:00"
+        binding.songProgressBar.progress = 0
+        loadCover()
+        job1 = lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                if (mediaPlayer != null) {
+                    mediaPlayer?.stop()
+                    mediaPlayer?.reset()
+                } else {
+                    mediaPlayer = MediaPlayer()
+
+                }
+                mediaPlayer?.apply {
+                    setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .build()
+                    )
+                    setDataSource(song.url)
+                    prepare()
+                    start()
+                    setOnCompletionListener {
+                        binding.btnPlayPause.setImageResource(R.drawable.play_icon)
+                        playNextSong()
+                    }
+                    setOnErrorListener { mp, what, extra ->
+                        Toast.makeText(requireContext(), MSG_FOR_ERROR_IN_SONG, Toast.LENGTH_SHORT)
+                            .show()
+                        binding.btnPlayPause.setImageResource(R.drawable.play_icon)
+                        mediaPlayer?.reset()
+                        true
+                    }
+                }
+
+            } catch(e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main){
+                    binding.btnPlayPause.setImageResource(R.drawable.play_icon)
+                    Snackbar.make(binding.root, MSG_FOR_ERROR_IN_SONG, Snackbar.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
@@ -109,68 +179,40 @@ class PlayerFragment : Fragment() {
     }
 
     private fun playPreviousSong() {
-        if(currentIndex > 0){
-            song = songList[--currentIndex]
-            binding.btnPrevious.isEnabled = currentIndex != 0
-            binding.txtCurrentDuration.text = "0:00"
-            binding.songProgressBar.progress = 0
-            if(mediaPlayer.isPlaying){
-                binding.btnPlayPause.setImageResource(R.drawable.play_icon)
+        if(isInternetAvailable(requireContext())) {
+            if (currentIndex >= 0) {
+                if (currentIndex == 0)
+                    currentIndex = songList.size
+                song = songList[--currentIndex]
+                initMusicPlayer()
+                updatePlayerData()
             }
-            loadCover()
-            mediaPlayer.stop()
-            mediaPlayer.reset()
-            prepareMediaPlayer()
+        } else {
+            Snackbar.make(requireView(), NO_INTERNET, Snackbar.LENGTH_SHORT).show()
         }
     }
 
     private fun playNextSong() {
-        if(currentIndex < songList.size - 1){
-            song = songList[++currentIndex]
-            binding.btnNext.isEnabled = currentIndex != songList.size - 1
-            binding.txtCurrentDuration.text = "0:00"
-            binding.songProgressBar.progress = 0
-            if(mediaPlayer.isPlaying){
-                binding.btnPlayPause.setImageResource(R.drawable.play_icon)
+        if(isInternetAvailable(requireContext())) {
+            if (currentIndex <= songList.size - 1) {
+                if (currentIndex == songList.size - 1)
+                    currentIndex = -1
+                song = songList[++currentIndex]
+                initMusicPlayer()
+                updatePlayerData()
             }
-
-            loadCover()
-            mediaPlayer.stop()
-            mediaPlayer.reset()
-            prepareMediaPlayer()
-        }
-    }
-
-    private fun enablePlaying(flag: Boolean){
-        if(flag) {
-            binding.btnPlayPause.setImageResource(R.drawable.play_icon)
-            mediaPlayer.pause()
         } else {
-            binding.btnPlayPause.setImageResource(R.drawable.pause_icon)
-            //updateSeekbar()
-        }
-    }
-
-    private fun prepareMediaPlayer(){
-        try {
-            binding.txtCurrentDuration.text = "0:00"
-            binding.songProgressBar.progress = 0
-            mediaPlayer.setDataSource(song.url)
-            mediaPlayer.prepare()
-            binding.songProgressBar.max = mediaPlayer.duration
-            binding.txtTotalDuration.text = milliSecondsToTime(mediaPlayer.duration.toLong())
-            mediaPlayer.start()
-            updateSeekbar()
-        } catch (e: Exception){
-            e.printStackTrace()
+            Snackbar.make(requireView(), NO_INTERNET, Snackbar.LENGTH_SHORT).show()
         }
     }
 
     private fun updateSeekbar() {
-        seekbarJob = lifecycleScope.launch {
-            while(mediaPlayer.isPlaying){
-                binding.songProgressBar.progress = mediaPlayer.currentPosition
-                binding.txtCurrentDuration.text = milliSecondsToTime(mediaPlayer.currentPosition.toLong())
+        lifecycleScope.launch{
+            while (mediaPlayer != null && mediaPlayer?.isPlaying == true) {
+                println(mediaPlayer?.currentPosition)
+                binding.songProgressBar.progress = mediaPlayer?.currentPosition!!
+                binding.txtCurrentDuration.text = mediaPlayer?.currentPosition?.toLong()
+                    ?.let { milliSecondsToTime(it) }
                 delay(1000)
             }
         }
@@ -193,64 +235,27 @@ class PlayerFragment : Fragment() {
         timerString = timerString.plus(minutes).plus(":").plus(secondString)
         return timerString
     }
+    private fun showProgressDialog(): Dialog {
+        val dialog = Dialog(requireActivity(), android.R.style.Theme_Translucent_NoTitleBar_Fullscreen)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setCancelable(false)
+        dialog.setContentView(R.layout.fragment_dialog)
+        return dialog
+    }
 
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
-        mediaPlayer.stop()
-        mediaPlayer.reset()
-        mediaPlayer.release()
+        mediaPlayer?.stop()
+        mediaPlayer?.reset()
+        mediaPlayer?.release()
     }
 
-/*
-    class MyGestureListener(findNavController: NavController) : GestureDetector.SimpleOnGestureListener() {
-        private val threshold = 100
-        private val velocity = 100
-        private var findNavController: NavController
-
-        init {
-            this.findNavController = findNavController
-        }
-
-        override fun onDown(e: MotionEvent): Boolean {
-            return true
-        }
-
-        override fun onFling(
-            e1: MotionEvent?,
-            e2: MotionEvent,
-            velocityX: Float,
-            velocityY: Float
-        ): Boolean {
-            val xDiff = e2.x - e1?.x!!
-            val yDiff = e2.y - e1.y
-            try {
-                if(abs(xDiff) > abs(yDiff)) {
-                    if(abs(xDiff) > threshold && abs(velocityX)> velocity){
-                        if(xDiff > 0){
-                            println("Swiped right")
-                        } else{
-                            println("Swiped left")
-                        }
-                        return true
-                    }
-                } else {
-                    if(abs(yDiff) > threshold && abs(velocityY) > velocity) {
-                        if(yDiff > 0) {
-                            println("Swiped down")
-                            findNavController.popBackStack()
-                        } else {
-                            println("Swiped up")
-                        }
-                        return true
-                    }
-                }
-            } catch (e: Exception){
-                e.printStackTrace()
-            }
-            return super.onFling(e1, e2, velocityX, velocityY)
-        }
+    override fun swipeLeft() {
+        playNextSong()
     }
-*/
 
+    override fun swipeRight() {
+        playPreviousSong()
+    }
 }

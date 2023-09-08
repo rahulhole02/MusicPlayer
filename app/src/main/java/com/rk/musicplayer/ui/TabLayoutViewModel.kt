@@ -14,7 +14,6 @@ class TabLayoutViewModel : ViewModel() {
     val _songList: LiveData<List<Songs>> get() = songList
     private val filteredTopTracks = MutableLiveData<List<Songs>>()
     val _filteredTopTracks: LiveData<List<Songs>> get() = filteredTopTracks
-    val itemClicked = MutableLiveData<Songs>()
 
     fun callApi(){
         viewModelScope.launch(Dispatchers.IO) {
@@ -23,9 +22,9 @@ class TabLayoutViewModel : ViewModel() {
                 val responseBody = response.body()
                 songList.postValue(responseBody?.data)
                 filteredTopTracks.postValue(filterTopTrackList(responseBody?.data))
-                println("Response successful")
             } else {
-                println("Response failure")
+                songList.postValue(ArrayList<Songs>())
+                filteredTopTracks.postValue(filterTopTrackList(ArrayList<Songs>()))
             }
         }
     }
